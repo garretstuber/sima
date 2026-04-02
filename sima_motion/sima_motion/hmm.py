@@ -196,7 +196,7 @@ def _threshold_gradient(im):
 def _initial_distribution(decay, noise_cov, mean_shift):
     """Get the initial distribution of the displacements."""
     initial_cov = np.linalg.solve(np.diag([1, 1]) - decay * decay.T,
-                                  noise_cov.newbyteorder('>').byteswap())
+                                  np.ascontiguousarray(noise_cov))
     for _ in range(1000):
         initial_cov = decay * initial_cov * decay.T + noise_cov
     initial_cov[0, 0] = max(initial_cov[0, 0], 0.1)
@@ -509,7 +509,7 @@ class MovementModel:
         noise_cov = self.cov_matrix()
         initial_cov = np.linalg.solve(
             np.diag(np.ones(len(decay))) - decay * decay.T,
-            noise_cov.newbyteorder('>').byteswap())
+            np.ascontiguousarray(noise_cov))
         for _ in range(1000):
             initial_cov = decay * initial_cov * decay.T + noise_cov
         for i in range(len(initial_cov)):
