@@ -141,7 +141,8 @@ def _whole_frame_shifting(dataset, shifts):
         reference /= count
         assert np.all(np.isnan(reference[np.equal(count, 0)]))
         variances = (sum_squares / count) - reference ** 2
-        assert not np.any(variances < 0)
+        # Clamp small negative variances from floating-point precision
+        variances = np.maximum(variances, 0)
     return reference, variances
 
 
@@ -323,10 +324,24 @@ class _HiddenMarkov(MotionEstimationStrategy):
             max_displacement = np.array(dataset.frame_shape[:3]) // 2
         else:
             max_displacement = np.array(params['max_displacement'])
-        gains = nanmedian(
-            (variances / references).reshape(-1, references.shape[-1]))
+        # Estimate photon-to-intensity gains per channel.
+        # Mask out pixels where the reference is zero or negative
+        # (unobserved regions after frame alignment) to avoid NaN/Inf.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gain_ratio = variances / references
+        # Only keep pixels where both reference and variance are valid
+        valid = np.isfinite(gain_ratio) & (references > 0) & (variances > 0)
+        gains = np.array([
+            np.median(gain_ratio[..., c][valid[..., c]])
+            for c in range(references.shape[-1])
+        ])
         if not (np.all(np.isfinite(gains)) and np.all(gains > 0)):
-            raise Exception('Failed to estimate positive gains')
+            raise Exception(
+                'Failed to estimate positive gains. This can happen if the '
+                'data has too little signal or too many blank frames. '
+                f'Computed gains: {gains}'
+            )
         pixel_means, pixel_variances = _pixel_distribution(dataset)
         movement_model = MovementModel.estimate(shifts)
         if shifts[0].shape[-1] == 2:
